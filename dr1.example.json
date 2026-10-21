@@ -1,0 +1,24 @@
+{
+  "output": "/path/to/new/scratch/run",
+  "population_id": "modified_y3_elg",
+  "photometric": {
+    "data": "/path/to/elg_targets_sysnet.fits",
+    "randoms": "/path/to/elg_randoms_sysnet.fits",
+    "mask": "/path/to/final_galactic_ring_nside2048_mask.fits",
+    "mask_sha256": "REPLACE_WITH_MASK_SHA256"
+  },
+  "reference_root": "/global/cfs/cdirs/desi/public/dr1/survey/catalogs/dr1/LSS/iron/LSScats/v1.5",
+  "cache_manifest": null,
+  "regions_file": null,
+  "prescriptions": ["takahashi", "mead2020"],
+  "chunk_rows": 262144,
+  "n_regions": 150,
+  "region_seed": 20261019,
+  "limits": {
+    "max_tasks": 1000000,
+    "max_memory_bytes": 1073741824,
+    "max_result_bytes": 268435456,
+    "max_product_bytes": 536870912,
+    "max_matter_work": 2000000000
+  }
+}

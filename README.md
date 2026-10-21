@@ -48,3 +48,111 @@ regions used.
 run_test.sh runs a test set, which is compared to the correlation function
 computed from astropy's SkyCoord module in test_correlation_function.py.
 This verifies that we recover the correct correlation function on the curved sky.
+
+## DESI DR1 runtime
+
+`run_dr1.py` is the new entry point. The original scripts above are unchanged.
+This branch starts from `master` at `c945a39`; that is the repository baseline,
+not a verified archival checkout of the exact run used in arXiv:1909.07412.
+Only the final measurement path is included: no new tests, pilot jobs, scheduler
+scripts, validation campaigns, generated products, or downstream cosmology fit.
+
+### What to review
+
+| Step | Original repository | New runtime |
+| --- | --- | --- |
+| Inputs and counting | `cross_correlate.py`, BallTree | `bxz/catalogs.py`, `cache_prepare.py`, `paircount/`: weighted DR1/Y3 cell caches and pycorr + Corrfunc |
+| Cross-correlation | `error_estimator.py` | `bxz/reference_measurement.py`: `DsDp / [(Ws/Wrs) RsDp] - 1`, with normalization separately for each cap and fine redshift slice |
+| Scale integration | `get_b_dndz.py`: weighted integral of the cross-correlation | `bxz/operator.py`: explicit angular-to-comoving scale windows and logarithmic scale integration |
+| Reference bias | No spectroscopic autocorrelation calibration in `get_b_dndz.py` | `bxz/reference_auto_estimator.py`, `reference_radial_template.py`, `reference_calibration.py`: DD/DR/RR Landy–Szalay autocorrelations and a joint NGC/SGC same-scale bias fit |
+| Conversion | The integral is plotted with a `b*dN/dz` label | `bxz/reference_apparent_kernel.py`, `theory_*.py`: divide by reference bias and projected matter response to obtain apparent photometric `b(z)*phi(z)` |
+| Errors and combination | Original resampling options | Common 150-region jackknife; refit bias and recompute windows for every deletion; full covariance across tracers; `bxz/plotting.py` combines overlapping bins |
+
+Read `bxz/pipeline.py` for the complete stage wiring. Its numerical routines
+are extracted from the completed DR1 implementation; the frontend replaces
+job-specific dependencies on earlier pilot and diagnostic runs. File identity
+checks prevent combining counts or products from different configurations.
+
+### Inputs and fixed measurement choices
+
+Copy `dr1.example.json` outside the repository and fill in absolute catalogue,
+mask, and new scratch-output paths, the mask SHA-256, and a population name.
+The photometric selection is `elg_mask == 0` plus the binary Galactic RING
+NSIDE=2048 mask using stored `l,b`. Targets use `WEIGHT_SN`; photometric randoms
+have unit weight and define the jackknife regions. Photometric redshifts are
+not used. Both files need the columns checked by `bxz/catalogs.py`.
+
+The reference inputs are public DR1 LSS v1.5 clustering catalogues and random
+index 0, both NGC and SGC, with supplied `WEIGHT` (no FKP): BGS_BRIGHT at
+0.05–0.5, LRG at 0.4–1.1, ELG_LOPnotqso at 0.8–1.6, and QSO at 0.8–3.5.
+Cross-count slices have width 0.01; output and reference-auto bins have width
+0.05. Two comoving scale bins span 2.5–5 and 5–10 h^-1 Mpc, subject to the
+native angular cuts. These scientific defaults are explicit in `pipeline.py`.
+
+The conversion uses the fixed Planck-2018 parameters in `bxz/cosmology.py`,
+CAMB 1.6.4 with Takahashi Halofit by default, and HMcode 2020 as an alternative.
+It applies the total-matter nonlinear boost to the linear CDM+baryon spectrum.
+The model uses Limber projection and uniform-area native annuli; RSD/FoG,
+redshift errors, integral-constraint and magnification corrections are omitted.
+The output is a signed, apparent `b*phi`, with `phi` the normalized photometric
+redshift density. It is not a separately measured bias or normalized `phi`.
+
+### Running
+
+Use Python >=3.11 with the dependencies in `pyproject.toml`, plus the
+cosmodesi **pycorr** package and **Corrfunc**. Use an existing compatible
+scientific environment: the unrelated package named `pycorr` on PyPI is not
+this pair counter. No installation or allocation is performed by this code.
+
+Run the following inside an approved Slurm CPU allocation, from this checkout.
+Choose `--workers` within that allocation's CPU and memory limits. It controls
+counting only; other stages run serially. Production stages must not run on a
+login node. Any submitted Slurm job should include `--mail-type=ALL` and
+`--mail-user=ezaborowski@berkeley.edu`.
+
+```bash
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1 NUMBA_NUM_THREADS=1
+python run_dr1.py /path/to/config.json cache
+python run_dr1.py /path/to/config.json regions
+python run_dr1.py /path/to/config.json cross-counts --workers 4
+python run_dr1.py /path/to/config.json auto-counts --workers 4
+python run_dr1.py /path/to/config.json measure
+python run_dr1.py /path/to/config.json matter
+python run_dr1.py /path/to/config.json calibrate
+python run_dr1.py /path/to/config.json plot
+```
+
+The full counting workload is 1,860 cross tasks (DD/RD) and 558 reference-auto
+tasks (DD/DR/RR). Cache creation streams catalogues; counting loads bounded
+cell pairs. JSON `limits` bound individual arrays/tasks, not total job RSS,
+runtime or scratch usage. Estimate those separately for the selected inputs
+and workers. The cache buffer pool is 512 MiB plus input/mask overhead.
+
+Set `cache_manifest` to a completed `bxz.dr1-full-cache.v1` manifest to reuse
+an existing cache and skip `cache`. Set `regions_file` to a saved region map
+to preserve the previous realization definitions. The cache must include
+photometric data/randoms and all reference data/random groups. Completed
+count blocks are reusable on restart; other stages publish exclusive outputs.
+Use a new output directory when changing source or configuration. Existing
+job-specific measurement/calibration archives are not imported by this runner.
+
+### Plotting in Jupyter
+
+Start the notebook in this checkout (or put this checkout on `sys.path`):
+
+```python
+from bxz.plotting import plot_tracers_and_combined
+
+fig_tracers, fig_combined, result = plot_tracers_and_combined(
+    "/path/to/run", case="takahashi_refined", dlog10_z=None,
+)
+# Optional: dlog10_z=0.08 combines whole existing bins on an approximate log-z grid.
+# Alternative matter prescription: case="mead2020_refined".
+combined_covariance = result["combined"]["covariance"]
+```
+
+The combination uses fixed inverse marginal-variance weights and propagates
+all cross-tracer/redshift covariance as `W C W.T`. Unsupported bins are omitted.
+Logarithmic rebinning averages densities with redshift-width weights and snaps
+to existing bin boundaries; it cannot create resolution finer than 0.05.

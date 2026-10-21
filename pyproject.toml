@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bxz"
+version = "0.1.0"
+description = "DESI DR1 clustering-redshift measurement"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "astropy", "healpy", "fitsio", "scikit-learn", "camb==1.6.4", "matplotlib"]
+
+[tool.setuptools.packages.find]
+include = ["bxz*"]
