@@ -90,3 +90,30 @@ The three `pickle.dump` calls in `cross_correlate.py` now explicitly use
 protocol 4. The failed random-tree file is incomplete and must not be loaded;
 a fresh submission uses a new output directory and rebuilds the trees.
 Full-measurement runtime and peak memory remain unmeasured.
+
+## Python 3.11 environment upgrade
+
+`elgcmb_legacy` now uses Python 3.11.17, pip 26.2.2, certifi 2026.10.19,
+ca-certificates 2026.10.20, and the scientific versions in
+`environment-legacy.yml`. Four `logspace` calls explicitly convert Astropy
+quantities to numeric bounds and restore the quantity type. The final environment
+passed the complete CMASS wrapper, five-slice aggregation, and BallTree reload.
+Raw counts are identical; measurement columns agree to floating-point precision.
+Angular labels differ by about 1.2e-8 fractionally because Astropy updated its
+physical constants. See `compatibility-python311.json` for the test records.
+
+The affected root is absent from certifi, pip's vendored certifi, and the default
+OpenSSL CA store. Python's bundled `ensurepip` seed was also updated to pip
+26.2.2, and creating a new virtual environment was checked. **Recreating this
+conda environment requires that extra step:** the pinned Python package still
+bundles pip 24.0. Put the hash-verified
+[pip 26.2.2 wheel](https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70)
+in `lib/python3.11/ensurepip/_bundled`, change `_PIP_VERSION` in
+`ensurepip/__init__.py` to `26.2.2`, and remove the old pip wheel. Replace the
+module's inode rather than editing it in place: conda may hardlink it to the
+shared package cache. Check `python -m ensurepip --version` afterward.
+
+The original environment is retained at
+`/global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy_py37_backup_20261023`.
+Its embedded paths still refer to the original location; restore that directory
+to `elgcmb_legacy` before using it for rollback. Do not run the backup in place.

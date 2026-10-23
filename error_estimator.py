@@ -479,14 +479,14 @@ for i in range(zbin):
 		thmax = (Smax/R)*180./np.pi
 		#print(thmin)
 		#print(np.logspace(-3,0,16,endpoint=True))
-		b = np.logspace(np.log10(thmin),np.log10(thmax),nbins+1,endpoint=True)
+		b = u.Quantity(np.logspace(np.log10(thmin.value),np.log10(thmax.value),nbins+1,endpoint=True))
 		
 		theta = 0.5*(b[1:]+b[:-1])
 
 		s = np.radians(theta.value)*R
 		
-		theta_low = 3600.*np.logspace(np.log10(thmin), np.log10(thmax), nbins+1, endpoint=True)[:-1]
-		theta_high  = 3600.*np.logspace(np.log10(thmin), np.log10(thmax), nbins+1, endpoint=True)[1:]
+		theta_low = 3600.*u.Quantity(np.logspace(np.log10(thmin.value), np.log10(thmax.value), nbins+1, endpoint=True))[:-1]
+		theta_high  = 3600.*u.Quantity(np.logspace(np.log10(thmin.value), np.log10(thmax.value), nbins+1, endpoint=True))[1:]
 		slow = np.radians(theta_low.value/3600.)*R
 		shigh = np.radians(theta_high.value/3600.)*R
 		

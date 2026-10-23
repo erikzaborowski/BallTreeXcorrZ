@@ -1,23 +1,36 @@
 name: elgcmb_legacy
+# After recreating, also refresh Python's ensurepip seed; see README-elg-sdss.md.
 channels:
   - https://repo.anaconda.com/pkgs/main
   - nodefaults
 dependencies:
-  - python=3.7.16
-  - pip=22.3.1
-  - setuptools=65.6.3
-  - wheel=0.38.4
+  - python=3.11.17
+  - openssl=3.5.9
+  - ca-certificates=2026.10.20
+  - certifi=2026.10.19
+  - pip=26.2.2
+  - packaging=26.3
+  - setuptools=84.0.0
+  - wheel=0.48.0
   - pip:
       - "--only-binary=:all:"
-      - numpy==1.16.6
-      - scipy==1.3.3
-      - astropy==3.2.3
-      - scikit-learn==0.22.2.post1
-      - healpy==1.13.0
-      - matplotlib==3.1.3
-      - joblib==0.14.1
-      - pyparsing==2.4.7
-      - six==1.14.0
-      - python-dateutil==2.8.1
-      - cycler==0.10.0
-      - kiwisolver==1.1.0
+      - numpy==1.23.5
+      - scipy==1.10.1
+      - astropy==5.2.2
+      - scikit-learn==1.2.2
+      - healpy==1.16.6
+      - matplotlib==3.7.5
+      - cloudpickle==3.1.2
+      - contourpy==1.3.2
+      - cycler==0.12.1
+      - fonttools==4.67.0
+      - joblib==1.6.0
+      - kiwisolver==1.5.1
+      - pillow==13.0.0
+      - pyerfa==2.0.1.5
+      - pyparsing==3.3.3
+      - python-dateutil==3.0.0
+      - PyYAML==6.0.3
+      - six==1.17.0
+      - threadpoolctl==3.7.0
+      - tzdata==2026.5

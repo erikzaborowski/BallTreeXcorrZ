@@ -137,7 +137,7 @@ for i in range(len(zs)-1):
 		thmax = (Smax/R)*180./np.pi
 		#print(thmin)
 		#print(np.logspace(-3,0,16,endpoint=True))
-		b = np.logspace(np.log10(thmin),np.log10(thmax),nbins+1,endpoint=True)
+		b = u.Quantity(np.logspace(np.log10(thmin.value),np.log10(thmax.value),nbins+1,endpoint=True))
 
 		d2rad = np.array([data2DEC*np.pi/180.,data2RA*np.pi/180.]).transpose()
 
