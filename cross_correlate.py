@@ -89,11 +89,11 @@ print("Computed healpixels")
 if not ns.loadtree:
 	t0 = time.time()
 	d1tree = neighbors.BallTree(d1rad,metric='haversine')
-	pickle.dump(d1tree,open('%s-d1tree.p' % (truncate(ns.phot_name)),'wb'))
+	pickle.dump(d1tree,open('%s-d1tree.p' % (truncate(ns.phot_name)),'wb'),protocol=4)
 	print(time.time()-t0)# 5x as long as flatsky case
 
 	r1tree = neighbors.BallTree(r1rad,metric='haversine')
-	pickle.dump(r1tree,open('%s-r1tree.p' % (truncate(ns.phot_name_randoms)),'wb'))
+	pickle.dump(r1tree,open('%s-r1tree.p' % (truncate(ns.phot_name_randoms)),'wb'),protocol=4)
 else:
 	d1tree = pickle.load(open('%s-d1tree.p' % (truncate(ns.phot_name)),'rb'))
 	print("Loaded data tree")
@@ -192,5 +192,5 @@ for i in range(len(zs)-1):
 		arr_out = np.concatenate((inds[:,np.newaxis],dd,dr),axis=1)
 		arr_out.tofile('%s-%s/%i.bin' % (truncate(ns.phot_name),truncate(ns.spec_name),name_ind))
 		print(time.time()-t0," wrote histograms")
-		pickle.dump([inds,dd_pix_list,dr_pix_list],open('%s-%s/%i_pix_list.p' % (truncate(ns.phot_name),truncate(ns.spec_name),name_ind),'wb'))
+		pickle.dump([inds,dd_pix_list,dr_pix_list],open('%s-%s/%i_pix_list.p' % (truncate(ns.phot_name),truncate(ns.spec_name),name_ind),'wb'),protocol=4)
 		print(time.time()-t0," wrote pixel lists")

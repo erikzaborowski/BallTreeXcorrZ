@@ -79,6 +79,14 @@ with a test stub for `srun` (no allocation). All 107 columns match the repositor
 reference table exactly; the integrated result is 0.2908933000 ± 0.1333327134.
 A second fixture verified five-slice aggregation, retention of reference row
 zero, masked-row and unsupported-reference rejection, and agreement between the
-global correlation and the raw pair counts. Full ELG runtime and memory usage
-have not yet been measured. The only new estimator edits round the number of
-count slices and recognize a nonempty index array containing only zero.
+global correlation and the raw pair counts. The only new estimator edits round
+the number of count slices and recognize a nonempty index array containing only
+zero.
+
+The first full-catalogue job (60141624) prepared the inputs successfully but
+failed before pair counting while saving the random BallTree: Python 3.7's
+default pickle protocol cannot serialize a bytes object larger than 4 GiB.
+The three `pickle.dump` calls in `cross_correlate.py` now explicitly use
+protocol 4. The failed random-tree file is incomplete and must not be loaded;
+a fresh submission uses a new output directory and rebuilds the trees.
+Full-measurement runtime and peak memory remain unmeasured.
