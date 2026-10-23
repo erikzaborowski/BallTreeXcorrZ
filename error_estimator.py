@@ -174,7 +174,7 @@ downgrade_vec = np.zeros(12*nside_base**2)
 nside_base_vec = np.arange(12*nside_base**2)
 downgrade_vec = downgrade(nside_base_vec,nside_base,ns.nside)
 
-zlen = int(ns.dz/orig_deltaz)
+zlen = int(round(ns.dz/orig_deltaz))
 #zlen = 1
 zbin = int(round((ns.zmax-ns.zmin)/ns.dz))
 
@@ -349,7 +349,7 @@ for i in range(zbin):
 			inds = pixel_lists[0]
 			dd_pix_list = pixel_lists[1]
 			dr_pix_list = pixel_lists[2]
-			if np.any(inds):		
+			if len(inds) > 0:
 				if flag == 1:
 					flag2 = 1
 				else:
