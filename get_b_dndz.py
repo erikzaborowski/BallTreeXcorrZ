@@ -39,8 +39,6 @@ zs = np.linspace(ns.zmin,ns.zmax,int(round((ns.zmax-ns.zmin)/ns.dz))+1)
 dndzall = np.zeros(len(zs)-1)
 dndzall_err = np.zeros(len(zs)-1)
 
-nboot = int(ns.gal_name.split('_')[-1])
-
 for i in range(len(zs)-1):
 	try:
 		if ns.error == 'bootstrap':
@@ -58,42 +56,41 @@ for i in range(len(zs)-1):
 		s = dat[:,3]
 		w = dat[:,6]
 		ds = dat[:,5]-dat[:,4] # will replace with ds from actual bins...
-		dndz = np.sum(ds[ind:]/s[ind:]*w[ind:])
+		dndz = np.sum(ds[inds:]/s[inds:]*w[inds:])
 		err_poisson = dat[:,7]
 		#cov = dat[:,11:11+nbins]
 		cov = dat[:,13:13+nbins]
 		wjack_loo = dat[:,13+nbins:13+nbins+ns.njack]
 		cnts = dat[0,13+nbins+2*ns.njack:13+nbins+3*ns.njack]
 		
-		print cnts
-		print np.sqrt(np.diag(cov[4:,4:]))
+		print(cnts)
+		print(np.sqrt(np.diag(cov[4:,4:])))
 		
-		print nspec, ns.njack, i
+		print(nspec, ns.njack, i)
 	
-		if (np.any(cov[ind:,ind:] == 0)) or (nspec < ns.njack):
+		if (np.any(cov[inds:,inds:] == 0)) or (nspec < ns.njack):
 			dndzall[i] = np.nan
 			dndzall_err[i] = np.nan
 		else:
-			wbar = np.sum((ds[ind:]/s[ind:])[:,np.newaxis]*wjack_loo[ind:,:],axis=0)
+			wbar = np.sum((ds[inds:]/s[inds:])[:,np.newaxis]*wjack_loo[inds:,:],axis=0)
 			dndz_err = np.sqrt(np.sum((np.sum(cnts)-cnts)/np.sum(cnts) *(wbar-np.mean(wbar))**2.))	
-			print i, dndz_err, np.sqrt(np.sum(np.dot(cov[ind:,ind:],ds[ind:]**2/s[ind:]**2)))		
+			print(i, dndz_err, np.sqrt(np.sum(np.dot(cov[inds:,inds:],ds[inds:]**2/s[inds:]**2))))
 			dndzall[i] = dndz
 			dndzall_err[i] = dndz_err
-			print time.time()-t0
+			print(time.time()-t0)
 	except IOError:
 		dndzall[i] = np.nan
 		dndzall_err[i] = np.nan
-print time.time()-t0
+print(time.time()-t0)
 
-if ns.gal_name.find('/') != -1:
-	gal_name = ns.gal_name.replace('/','_')
+gal_name = ns.gal_name.replace('/','_')
 	
 #np.savetxt('bdndz/unwise_DR14_QSO/ak/%s/dz0.05/%s/nostar_%s.txt' % (hemi,error,name), np.array([dndzall,dndzall_err]).transpose())
 os.system('mkdir %s' % ('/'.join(ns.bdndz_name.split('/')[:-3])))
 os.system('mkdir %s' % ('/'.join(ns.bdndz_name.split('/')[:-2])))
 os.system('mkdir %s' % ('/'.join(ns.bdndz_name.split('/')[:-1])))
 os.system('mkdir %s' % (ns.bdndz_name))
-print 'mkdir %s/dz%.2f/' % (ns.bdndz_name, ns.dz)
+print('mkdir %s/dz%.2f/' % (ns.bdndz_name, ns.dz))
 os.system('mkdir %s/dz%.2f/' % (ns.bdndz_name, ns.dz))
 os.system('mkdir %s/dz%.2f/%s' % (ns.bdndz_name,ns.dz,ns.error))
 if ns.error == 'bootstrap':
@@ -121,4 +118,4 @@ elif ns.error == 'jackknife':
 	plt.savefig('%s/dz%.2f/%s/%s_%s.pdf' % (ns.bdndz_name,ns.dz,ns.error,gal_name,ns.jack_name))
 elif ns.error == 'poisson-diag':
 	plt.savefig('%s/dz%.2f/%s/%s.pdf' % (ns.bdndz_name,ns.dz,ns.error,gal_name))
-print time.time()-t0
+print(time.time()-t0)
