@@ -24,11 +24,14 @@ cli.add_argument("--dz",default=0.01,type=float,help="delta z")
 cli.add_argument("--Smin",default=0.05,type=float,help="minimum bin radius")
 cli.add_argument("--Smax",default=50,type=float,help="maximum bin radius")
 cli.add_argument("--Nbins",default=15,type=int,help="nbins")
+cli.add_argument("--query-batch-size",default=0,type=int,help="References per radius query; 0 keeps the original whole-slice query")
 cli.add_argument("phot_name", help="internal catalogue of fits type.")
 cli.add_argument("phot_name_randoms", help="internal catalogue of fits type.")
 cli.add_argument("spec_name", help="internal catalogue of fits type.")
 
 ns = cli.parse_args()
+if ns.query_batch_size < 0:
+	cli.error("query-batch-size must be nonnegative")
 
 deltaz = ns.dz # deltaz for this guy
 zmin = ns.zmin # For test purposes
@@ -141,55 +144,62 @@ for i in range(len(zs)-1):
 
 		d2rad = np.array([data2DEC*np.pi/180.,data2RA*np.pi/180.]).transpose()
 
-		t0 = time.time()
-		dd_tree_out = d1tree.query_radius(d2rad, np.max(b)*np.pi/180., return_distance=True, count_only=False)
-		print(time.time()-t0, " queried data")
+		# Keep the whole-slice mean redshift and bins; only batch the queries.
+		all_dd, all_dr, dd_pix_list, dr_pix_list = [], [], [], []
+		batch_size = ns.query_batch_size or len(d2rad)
+		for start in range(0,len(d2rad),batch_size):
+			stop = start + batch_size
+			t0 = time.time()
+			dd_tree_out = d1tree.query_radius(d2rad[start:stop], np.max(b)*np.pi/180., return_distance=True, count_only=False)
+			print(time.time()-t0, " queried data")
 
-		t0 = time.time()
-		dr_tree_out = r1tree.query_radius(d2rad, np.max(b)*np.pi/180., return_distance=True, count_only=False)
-		print(time.time()-t0, " queried random")
+			t0 = time.time()
+			dr_tree_out = r1tree.query_radius(d2rad[start:stop], np.max(b)*np.pi/180., return_distance=True, count_only=False)
+			print(time.time()-t0, " queried random")
 
-		dd = list(map(lambda x: np.histogram(x,bins=b*np.pi/180.)[0],dd_tree_out[1]))		
-		dd_pix = list(map(lambda x: d1pix[x], dd_tree_out[0]))
-		
-		dd_pix_list = []
-		
-		dr = list(map(lambda x: np.histogram(x,bins=b*np.pi/180.)[0],dr_tree_out[1]))
-		dr_pix = list(map(lambda x: r1pix[x], dr_tree_out[0]))
-			
-		dr_pix_list = []
-		
-		print(time.time()-t0," made histograms")
-		
-		for j in range(len(dd)):	
-			dd_hist_inds_orig = np.digitize(dd_tree_out[1][j],bins=b*np.pi/180.)-1
-			dd_hist_inds = dd_hist_inds_orig[dd_hist_inds_orig >= 0]
-			
-			dd_pixj = dd_pix[j]
-			dd_pixj = dd_pixj[dd_hist_inds_orig >= 0]
-			
-			dd_hist_inds_s = np.argsort(dd_hist_inds)
-		
-			cs = np.concatenate((np.array([0]),np.cumsum(dd[j])))
-		
-			dd_pix_list.append(list(map(lambda k: sparse_histogram(dd_pixj[dd_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
-	
-			dr_hist_inds_orig = np.digitize(dr_tree_out[1][j],bins=b*np.pi/180.)-1
-			dr_hist_inds = dr_hist_inds_orig[dr_hist_inds_orig >= 0]
-			
-			dr_pixj = dr_pix[j]
-			dr_pixj = dr_pixj[dr_hist_inds_orig >= 0]
-			
-			dr_hist_inds_s = np.argsort(dr_hist_inds)
-			
-			cs = np.concatenate((np.array([0]),np.cumsum(dr[j])))
-			
-			dr_pix_list.append(list(map(lambda k: sparse_histogram(dr_pixj[dr_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
+			dd = list(map(lambda x: np.histogram(x,bins=b*np.pi/180.)[0],dd_tree_out[1]))
+			dd_pix = list(map(lambda x: d1pix[x], dd_tree_out[0]))
+
+
+			dr = list(map(lambda x: np.histogram(x,bins=b*np.pi/180.)[0],dr_tree_out[1]))
+			dr_pix = list(map(lambda x: r1pix[x], dr_tree_out[0]))
+
+
+			print(time.time()-t0," made histograms")
+
+			for j in range(len(dd)):
+				dd_hist_inds_orig = np.digitize(dd_tree_out[1][j],bins=b*np.pi/180.)-1
+				dd_hist_inds = dd_hist_inds_orig[dd_hist_inds_orig >= 0]
+
+				dd_pixj = dd_pix[j]
+				dd_pixj = dd_pixj[dd_hist_inds_orig >= 0]
+
+				dd_hist_inds_s = np.argsort(dd_hist_inds)
+
+				cs = np.concatenate((np.array([0]),np.cumsum(dd[j])))
+
+				dd_pix_list.append(list(map(lambda k: sparse_histogram(dd_pixj[dd_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
+
+				dr_hist_inds_orig = np.digitize(dr_tree_out[1][j],bins=b*np.pi/180.)-1
+				dr_hist_inds = dr_hist_inds_orig[dr_hist_inds_orig >= 0]
+
+				dr_pixj = dr_pix[j]
+				dr_pixj = dr_pixj[dr_hist_inds_orig >= 0]
+
+				dr_hist_inds_s = np.argsort(dr_hist_inds)
+
+				cs = np.concatenate((np.array([0]),np.cumsum(dr[j])))
+
+				dr_pix_list.append(list(map(lambda k: sparse_histogram(dr_pixj[dr_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
+
+			all_dd.extend(dd)
+			all_dr.extend(dr)
+			del dd_tree_out, dr_tree_out, dd_pix, dr_pix
 
 		print(time.time()-t0," made pixel lists")
 		
 		inds = np.where(data2mask==True)[0]
-		arr_out = np.concatenate((inds[:,np.newaxis],dd,dr),axis=1)
+		arr_out = np.concatenate((inds[:,np.newaxis],all_dd,all_dr),axis=1)
 		arr_out.tofile('%s-%s/%i.bin' % (truncate(ns.phot_name),truncate(ns.spec_name),name_ind))
 		print(time.time()-t0," wrote histograms")
 		pickle.dump([inds,dd_pix_list,dr_pix_list],open('%s-%s/%i_pix_list.p' % (truncate(ns.phot_name),truncate(ns.spec_name),name_ind),'wb'),protocol=4)

@@ -48,3 +48,84 @@ regions used.
 run_test.sh runs a test set, which is compared to the correlation function
 computed from astropy's SkyCoord module in test_correlation_function.py.
 This verifies that we recover the correct correlation function on the curved sky.
+
+## Photometric ELGs with the SDSS reference sample
+
+`run_elg_sdss_full.slurm` drafts the full original redshift range: **0 < z < 4**,
+in 80 output bins of width 0.05, using native pair-count bins of width 0.01.
+It calls `run_elg_sdss.slurm` once per output bin, retaining the existing
+`cross_correlate.py` → `error_estimator.py` → `get_b_dndz.py` workflow.
+The sample has `elg_mask == 0` and unit weights. Reference overlap uses occupied
+photometric and random NSIDE=8 pixels, as in the pilot.
+
+Submit from this repository on `dr2-update-minimal`:
+
+```bash
+sbatch --account=desi run_elg_sdss_full.slurm
+```
+
+The array requests one CPU node per task, at most two tasks concurrently, and
+48 hours per task. Low-redshift queries cover much larger angles than the pilot;
+their runtime has not been benchmarked. Optional `--query-batch-size` limits
+the number of references queried together without changing each native slice's
+mean redshift, angular bins, or counting calculation. The array uses batches of
+1 below z=0.10 and 64 elsewhere; `QUERY_BATCH_SIZE` overrides this. The original
+whole-slice query remains the default (0) when calling the counting script or
+pilot job directly.
+
+By default, the array reuses the selected ELG/random catalogues and BallTrees
+from `/pscratch/sd/e/ezaborow/elg-sdss-60164850`; keep that directory available.
+`PREPARED_RUN` can select another compatible run. Each task checks the cached
+sample settings and scikit-learn version, then selects its own SDSS references.
+It writes into `$SCRATCH/elg-sdss-full-ARRAY_JOB_ID/bin-NNN/`, including
+`wbar.txt`, radial correlations, logs, and a code/settings snapshot. Output
+directories must be new. `FULL_RUN_ROOT` can override the parent directory.
+To check only the pilot's 0.80–0.85 bin through this new wrapper, submit with
+`--array=16` instead of the default full array.
+
+### Several bin workers per node
+
+`run_elg_sdss_workers.slurm` is an alternative to the array: it reserves **two
+CPU nodes with four single-threaded workers per node**, so eight bins can run
+at once. Workers atomically claim the next bin when they finish; each bin still
+calls the same full-range wrapper and legacy measurement scripts. This improves
+throughput across bins, not the speed of an individual bin. Each process loads
+its own catalogues and trees. No shared-memory assumption is made.
+
+```bash
+sbatch --account=desi run_elg_sdss_workers.slurm
+```
+
+The completed pilot peaked at about 68 GiB; four such processes would use about
+272 GiB on a 512 GB CPU node. The low-z timing probe peaked at 46 GiB but did not
+finish a native slice. Four workers is a conservative starting configuration,
+not a measured full-range memory guarantee or speedup. Concurrent I/O and the
+untested lowest bins still need a compute-node benchmark before increasing it.
+The draft accepts one or two nodes and one to four workers per node. For example,
+`--nodes=1 --ntasks-per-node=2 --export=ALL,BIN_START=16,BIN_STOP=18` selects a
+two-bin concurrency check (0.80–0.90); bin index bounds are half-open.
+
+The worker job uses the same `$SCRATCH/elg-sdss-full-JOB_ID/bin-NNN/` layout as
+the array. Top-level `logs/bin-NNN.log` and `claims/NNN/` record each bin's owner,
+elapsed time and exit code. Failed bins are reported while other workers finish
+their work; they are not automatically retried. Each allocation requires a new
+output root. The 48-hour limit covers the whole worker allocation, whereas the
+array's limit applies separately to each bin. Only the outer worker launch uses
+`srun`; the per-bin wrapper executes Python inside that existing step, avoiding
+nested launches. The original one-bin/array modes still use their usual steps.
+
+Open `plot_elg_sdss.ipynb` with a Jupyter kernel containing NumPy and matplotlib
+(the existing `elgcmb` kernel is suitable). It initially displays the completed
+pilot. Set `RUN_ROOT` to the full array's parent directory and run all cells to
+plot the available measurements and reference counts against redshift. The
+notebook reads only small output tables; it reports missing and invalid bins
+without replacing them with zeros, so it also works during a partial run. The
+orange histogram superimposes the calibrators' `N_SPEC / (z_high - z_low)` from
+the saved correlation headers on a separate right axis. It shows the reference
+sample used in available bins, not an inferred photometric redshift distribution.
+
+The plotted quantity is the scale-integrated, locally normalized correlation
+returned by `get_b_dndz.py`, using the last three radial bins (approximately
+2.517–10 h^-1 Mpc), with the existing equalized leave-one-out jackknife errors.
+No conversion to b*dN/dz is applied. These outputs contain per-bin errors, not
+a cross-redshift covariance matrix.
