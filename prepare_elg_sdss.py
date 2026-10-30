@@ -50,6 +50,27 @@ def prepare_photometry(source, destination, fraction, seed, chunk_size):
                        'selected_rows': selected, 'random_fraction': fraction}
 
 
+def reuse_photometry(phot, randoms, output, cached, random_fraction, seed):
+    """Reuse the exact selected catalogues and occupancy maps behind cached trees."""
+    cached = cached.resolve()
+    previous = json.loads((cached / 'selection.json').read_text())
+    phot_info, rand_info = previous['photometry'], previous['randoms']
+    if (phot.resolve() != Path(phot_info['source']).resolve() or
+            randoms.resolve() != Path(rand_info['source']).resolve() or
+            random_fraction != rand_info['random_fraction'] or
+            seed != previous['seed'] or
+            previous['selection'] != 'elg_mask == 0; unit weights; no additional ELG cuts'):
+        raise ValueError('Prepared catalogues do not match the requested sample/sampling settings')
+    for name, info in [('elg.fits', phot_info), ('randoms.fits', rand_info)]:
+        with fits.open(str(cached / name), memmap=True) as hdus:
+            if hdus[1].header['NAXIS2'] != info['selected_rows']:
+                raise ValueError('Prepared catalogue row count changed: ' + name)
+        (output / name).symlink_to(cached / name)
+    with np.load(str(cached / 'occupancy_nside8.npz')) as maps:
+        phot_map, rand_map = maps['phot'].copy(), maps['randoms'].copy()
+    return phot_map, rand_map, phot_info, rand_info
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phot', type=Path)
@@ -69,22 +90,9 @@ def main():
         parser.error('Require 0 <= zmin < zmax, 0 < random-fraction <= 1, chunk-size > 0')
     args.output.mkdir(parents=True, exist_ok=False)
     if args.prepared_inputs:
-        cached = args.prepared_inputs.resolve()
-        previous = json.loads((cached / 'selection.json').read_text())
-        phot_info, rand_info = previous['photometry'], previous['randoms']
-        if (args.phot.resolve() != Path(phot_info['source']).resolve() or
-                args.randoms.resolve() != Path(rand_info['source']).resolve() or
-                args.random_fraction != rand_info['random_fraction'] or
-                args.seed != previous['seed'] or
-                previous['selection'] != 'elg_mask == 0; unit weights; no additional ELG cuts'):
-            raise ValueError('Prepared catalogues do not match the requested sample/sampling settings')
-        for name, info in [('elg.fits', phot_info), ('randoms.fits', rand_info)]:
-            with fits.open(str(cached / name), memmap=True) as hdus:
-                if hdus[1].header['NAXIS2'] != info['selected_rows']:
-                    raise ValueError('Prepared catalogue row count changed: ' + name)
-            (args.output / name).symlink_to(cached / name)
-        with np.load(str(cached / 'occupancy_nside8.npz')) as maps:
-            phot_map, rand_map = maps['phot'].copy(), maps['randoms'].copy()
+        phot_map, rand_map, phot_info, rand_info = reuse_photometry(
+            args.phot, args.randoms, args.output, args.prepared_inputs,
+            args.random_fraction, args.seed)
     else:
         phot_map, phot_info = prepare_photometry(
             args.phot, args.output / 'elg.fits', 1., args.seed, args.chunk_size)
