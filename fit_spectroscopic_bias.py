@@ -78,14 +78,37 @@ def make_template(grid, theta_edges, z_edges, nz_counts, radial_order=8):
     Interpolate log(P) in z at fixed k. No redshift or k extrapolation.
     Distances match the legacy code's astropy Planck15 cosmology.
     """
-    from astropy.cosmology import Planck15
-    from astropy.constants import c
-
     z_edges = increasing(z_edges, 'z_edges')
     counts = np.asarray(nz_counts, float)
     if (z_edges[0] < 0 or counts.shape != (len(z_edges)-1,) or not np.isfinite(counts).all()
             or np.any(counts < 0) or counts.sum() <= 0 or radial_order < 2):
         raise ValueError('Invalid redshift histogram or quadrature order')
+    basis = make_template_basis(grid, theta_edges, z_edges, radial_order)
+    return templates_from_histograms(basis, counts)
+
+
+def templates_from_histograms(basis, counts):
+    """Reuse radial-cell projections for full and jackknife p(z)^2 windows."""
+    counts = np.asarray(counts, float)
+    if (counts.ndim not in (1, 2) or counts.shape[-1] != len(basis)
+            or not np.isfinite(counts).all() or np.any(counts < 0)
+            or np.any(counts.sum(axis=-1) <= 0)):
+        raise ValueError('Invalid radial histogram(s)')
+    return (counts/counts.sum(axis=-1, keepdims=True))**2 @ basis
+
+
+def make_template_basis(grid, theta_edges, z_edges, radial_order=8):
+    """Each row is the template for a normalized top-hat in one radial cell.
+
+    Squared cell probabilities combine these without reevaluating Bessel
+    functions for every jackknife histogram. Geometry/annuli remain fixed.
+    """
+    from astropy.cosmology import Planck15
+    from astropy.constants import c
+
+    z_edges = increasing(z_edges, 'z_edges')
+    if z_edges[0] < 0 or radial_order < 2:
+        raise ValueError('Invalid radial edges or quadrature order')
     z_grid = increasing(grid['z'], 'power z')
     k = increasing(grid['k_hmpc'], 'power k', positive=True)
     pk = np.asarray(grid['pk_mpc_over_h3'], float)
@@ -97,11 +120,15 @@ def make_template(grid, theta_edges, z_edges, nz_counts, radial_order=8):
     dz = np.diff(z_edges)
     z = ((z_edges[1:]+z_edges[:-1])[:, None]/2 + dz[:, None]*nodes/2).ravel()
     zw = (dz[:, None]*weights/2).ravel()
-    pz = np.repeat(counts/counts.sum()/dz, radial_order)
     power = np.exp(interp1d(z_grid, np.log(pk), axis=0, bounds_error=True)(z))
     chi = Planck15.comoving_distance(z).value*Planck15.h
     derivative = c.to_value('km/s')/Planck15.H(z).value*Planck15.h
-    return project_auto(k, power, chi, derivative, pz, zw, theta_edges)
+    basis = []
+    for i, width in enumerate(dz):
+        cell = slice(i*radial_order, (i+1)*radial_order)
+        basis.append(project_auto(k, power[cell], chi[cell], derivative[cell],
+                                  np.full(radial_order, 1/width), zw[cell], theta_edges))
+    return np.asarray(basis)
 
 
 def fit_bias(values, template, covariance):
@@ -158,7 +185,7 @@ def fingerprint(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--measurement', required=True, type=Path, help='Spectroscopic angular AUTO NPZ; see README-bias.md')
+    parser.add_argument('--measurement', required=True, type=Path, help='Spectroscopic angular AUTO NPZ; see README.md')
     parser.add_argument('--power', required=True, type=Path, help='Saved Planck15 total-matter Halofit NPZ')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--rmin', type=float, default=2.5)

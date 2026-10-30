@@ -54,7 +54,8 @@ def main(argv=None):
         hubble_units=True, k_hunit=True, return_z_k=True, extrap_kmax=None)
     k = np.geomspace(args.kmin, args.kmax, args.nk)
     if k[0] < np.min(native_k) or k[-1] > np.max(native_k):
-        raise ValueError('Requested k range is outside native CAMB coverage; no extrapolation')
+        raise ValueError(f'Requested k=[{k[0]:.8g}, {k[-1]:.8g}] h/Mpc is outside '
+                         f'native CAMB [{np.min(native_k):.8g}, {np.max(native_k):.8g}]; no extrapolation')
     if z[0] < np.min(native_z) or z[-1] > np.max(native_z):
         raise ValueError('Requested z range is outside native CAMB coverage')
     pk = interpolator.P(z, k)

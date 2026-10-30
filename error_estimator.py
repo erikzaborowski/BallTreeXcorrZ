@@ -34,6 +34,7 @@ cli.add_argument("--nbins",default=15,type=int,help="Number of bins")
 cli.add_argument("--orig_deltaz",default=0.01,type=float,help="Original deltaz")
 cli.add_argument("--nside_base",default=256,type=int,help="Original nside")
 cli.add_argument("--small_nside",default=8,type=int,help="nside for local wise density estimation")
+cli.add_argument('--spec-weight-column', help='Optional reference weight column; cached photometric pairs remain unit weighted')
 cli.add_argument("phot_name", help="internal catalogue of fits type.")
 cli.add_argument("phot_name_randoms", help="internal catalogue of fits type.")
 cli.add_argument("spec_name", help="internal catalogue of fits type.")
@@ -191,6 +192,11 @@ rand1DEC = rand1file['DEC'][:]
 
 data2RA = data2file['RA'][:]
 data2DEC = data2file['DEC'][:]
+spec_weights = None
+if ns.spec_weight_column:
+	spec_weights = np.asarray(data2file[ns.spec_weight_column], dtype=float)
+	if not np.all(np.isfinite(spec_weights) & (spec_weights > 0)):
+		raise ValueError('Reference weights must be finite and positive')
 
 #data2file_wted = fits.open('boss_dr12/lowz_masked-r1-v2-flag.fits')[1].data
 #data2wted_RA = data2file_wted['RA'][:]
@@ -280,7 +286,7 @@ unq_all_healpixels_fn_small[unq_all_healpixels_small] = unq_all_healpixels_inds_
 len_unq_hp_small = len(unq_all_healpixels_small)
 			
 # A function that we need later to set up the sparse matrix
-def make_sparse_mat(llist,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec):	
+def make_sparse_mat(llist,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec,row_weights=None):
 	#print 'began sparse mat',time.time()-t0
 	#pl = np.array(map(lambda x: downgrade(int(x),nside_base,nside),list[m][n][1]))
 
@@ -317,6 +323,10 @@ def make_sparse_mat(llist,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec):
 		else:
 			recounts.append(counts[i])
 	counts = recounts
+	if row_weights is not None:
+		if len(row_weights) != len(counts):
+			raise ValueError('Reference weights and cached pair rows do not align')
+		counts = [count * weight for count, weight in zip(counts, row_weights)]
 
 	c = csr_matrix((np.concatenate(counts), (np.concatenate(allh), unq_all_healpixels_fn[np.concatenate(unqpl)])),shape=(len_unq_hp,len_unq_hp))
 	return c
@@ -381,6 +391,7 @@ for i in range(zbin):
 	if flag != 0:
 		print('loaded files', time.time()-t0)
 		allinds = np.array(allinds).astype('int')
+		row_weights = None if spec_weights is None else spec_weights[allinds]
 		pix = hp.ang2pix(ns.nside,data2RA[allinds],data2DEC[allinds],lonlat=True)
 		
 		pix_small = hp.ang2pix(small_nside,data2RA[allinds],data2DEC[allinds],lonlat=True)
@@ -395,10 +406,10 @@ for i in range(zbin):
 			dd_flag = 0
 			dr_flag = 0
 			print('sparse matrix',time.time()-t0)
-			pair_mat_dd = make_sparse_mat(all_dd_pix_list,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec)
-			pair_mat_dr = make_sparse_mat(all_dr_pix_list,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec)
+			pair_mat_dd = make_sparse_mat(all_dd_pix_list,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec,row_weights)
+			pair_mat_dr = make_sparse_mat(all_dr_pix_list,unq_all_healpixels_fn,pix,len_unq_hp,n,downgrade_vec,row_weights)
 			# Average the data/random ratio over the number of random pairs (as a proxy for the unmasked size of the annulus)
-			pair_mat_dr2 = make_sparse_mat(all_dr_pix_list,unq_all_healpixels_fn_small,pix_small,len_unq_hp_small,n,downgrade_vec_small)
+			pair_mat_dr2 = make_sparse_mat(all_dr_pix_list,unq_all_healpixels_fn_small,pix_small,len_unq_hp_small,n,downgrade_vec_small,row_weights)
 			ratio_smallmap_pixels = 1./ratio_smallmap[unq_all_healpixels_small].astype('float')
 			ratio_smallmap_pixels[np.isnan(ratio_smallmap_pixels) | np.isinf(ratio_smallmap_pixels)] = 0
 			pd2 = pair_mat_dr2.toarray()
@@ -465,6 +476,11 @@ for i in range(zbin):
 		# the geometric mean of the two is purely empirical...
 		ng =  np.sqrt(np.shape(data2RA)[0]*np.shape(data1RA)[0])
 		w_mjb = np.sqrt(dd_data + dd_data**2. * 4./ng)/dr_data * float(Nr1)/float(Nd1)
+		if row_weights is not None:
+			# These legacy count-only approximations do not describe weighted pairs.
+			# The resampled measurements/covariance below do include the weights.
+			wpoisson[:] = np.nan
+			w_mjb[:] = np.nan
 		
 		data2RA_sel = data2file['RA'][:][allinds]
 		data2DEC_sel = data2file['DEC'][:][allinds]
@@ -567,6 +583,8 @@ for i in range(zbin):
 			def header(method):
 				header_out='\n'.join([
 						"SPEC=%s" % (ns.spec_name),
+						"SPEC_WEIGHT_COLUMN=%s" % (ns.spec_weight_column or 'unit'),
+						"PHOT_WEIGHT=unit",
 						"z1=%g z2=%g zmean=%g" % (z1, z2, zmean),
 						"PHOTO=%s" % (ns.phot_name),
 						"PHOTO_RANDOM=%s" % (ns.phot_name_randoms),
@@ -708,6 +726,8 @@ for i in range(zbin):
 			def header(method):
 				header_out='\n'.join([
 						"SPEC=%s" % (ns.spec_name),
+						"SPEC_WEIGHT_COLUMN=%s" % (ns.spec_weight_column or 'unit'),
+						"PHOT_WEIGHT=unit",
 						"z1=%g z2=%g zmean=%g" % (z1, z2, zmean),
 						"PHOTO=%s" % (ns.phot_name),
 						"PHOTO_RANDOM=%s" % (ns.phot_name_randoms),

@@ -264,13 +264,15 @@ is included. Near zero amplitude, the linear `sigma_b` approximation is poor.
 
 ### Inputs and first measured run
 
-**No measured biases have yet been produced on this branch.** The existing
+The existing
 `wbar.txt` files measure photometric ELG x reference cross-correlations and
-cannot determine reference bias by themselves. We first need a separate
+cannot determine reference bias by themselves. Bias fitting needs a separate
 angular autocorrelation for each reference tracer/bin with matching
 **spectroscopic** randoms, selection and footprint. Photometric ELG randoms
-cannot stand in for them. The old Landy--Szalay scripts exist but have not been
-ported/validated for this stage. The pooled tomographer SDSS catalog also needs
+cannot stand in for them. The old Landy--Szalay scripts remain unchanged;
+`measure_spectroscopic_auto.py` supplies a small unit-weight BallTree pilot
+with exact finite-N pair normalization and region deletions. The pooled
+tomographer SDSS catalog also needs
 appropriate component identification and selection/random catalogs before
 separate-tracer autocorrelations can be measured. Do not substitute the paper's
 tabulated biases for these different samples.
@@ -306,8 +308,8 @@ cross-correlations as well, rather than mixing weighting conventions.
 `make_spectroscopic_bias_power.py` can create the other input: a saved
 Takahashi-Halofit grid of total-matter P(k,z), with explicit units and
 provenance. It uses CAMB, which is **not installed in elgcmb_legacy**. Its
-solver path has not yet been exercised here; installation/environment choice
-and an approved compute run remain necessary. It fixes As=2.142e-9, ns=0.9667
+solver path was exercised with CAMB 1.6.4 in the existing `elgcmb` environment
+on the interactive pilot. It fixes As=2.142e-9, ns=0.9667
 and the Planck15 background, recording CAMB settings and checking distances
 against Astropy. A saved compatible grid can also be supplied directly:
 `z`, `k_hmpc`, `pk_mpc_over_h3` of shape (Nz,Nk), and `metadata_json` with
@@ -348,4 +350,158 @@ Small analytic tests, with no survey inputs or CAMB solve:
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   /global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy/bin/python \
   -m unittest -v test_spectroscopic_bias
+```
+
+### Interactive LRG autocorrelation pilot
+
+`run_spectroscopic_auto_pilot.sh` runs inside an approved interactive CPU
+step; it does not allocate resources. It measures the prepared LRG 0.80--0.85
+sample from cross-correlation job 60331727, reads the public DR1 NGC/SGC
+`LRG_*_0_clustering.ran.fits` catalogs, applies the same NSIDE=8 overlap, and
+uses unit weights. The three fixed angular annuli correspond to the legacy
+2.517--10 h^-1 Mpc bins at the sample mean redshift. This differs from the
+cross-correlation's finer native redshift slicing; the auto model uses these
+exact fixed angular edges.
+
+Set `PREPARED_RUN` to another completed LRG bin directory to reuse this
+wrapper; its redshift bounds come directly from that bin's `selection.json`.
+Set `WORKDIR` to a new output directory. Optional `POWER_GRID` supplies an
+absolute path to an existing compatible Halofit grid, which is linked into
+the run and checked by the fitter. This permits several bins to share one
+power calculation. The wrapper rejects non-LRG prepared samples because its
+random-catalog paths are specifically for LRGs.
+
+The pilot reuses the original `equalize_pixels` function by loading its
+function definition from `error_estimator.py`, without executing that script's
+catalog-reading CLI. Cached photometric-random counts reproduce the same
+74 jackknife regions; their area weights are checked against the saved
+cross-correlation. DD and RR are ordered pairs normalized by N(N-1), DR by
+ND*NR. Removing both ends of pairs gives exact leave-one-region-out counts.
+Small tests compare counts and deletions with brute-force SkyCoord separations:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  /global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy/bin/python \
+  -m unittest -v test_spectroscopic_auto
+```
+
+Interactive pilot 60523395 writes to
+`/pscratch/sd/e/ezaborow/lrg-auto-pilot-60523395/`. It contains 233,978 LRGs
+and 1,570,017 randoms. Preparation and counting took 51 seconds after Python
+startup. The baseline fit is b_s=2.3666 +/- 0.0262, chi-square=7.809 for two
+degrees of freedom. This is a diagnostic unit-weight fit: the shape mismatch
+should be investigated before using it as a final calibration.
+
+Saved-grid checks in `baseline_validation.json` halve the k sampling, truncate
+kmax from 30 to 20 or 10 h/Mpc, and coarsen the radial histogram from ten to
+five cells. They shift b_s by at most 0.00020 (under 0.008 of its fitting
+error). CAMB/Astropy distances agree to 3.2e-6 fractionally. An optional
+wider/finer CAMB solve requested a range outside native coverage; the retry
+to diagnose those bounds stalled on shared-filesystem I/O and was stopped.
+The requested pilot and saved-grid checks completed, and the allocation was
+released. No extrapolated power spectrum was used.
+
+Outputs include `auto/measurement.npz` (auto, covariance, radial histogram,
+and all jackknife auto/histogram realizations), `auto/pair_counts.npz`,
+`power.npz`, `bias.json`, `baseline_validation.json`, `auto_fit.png`, logs and
+code snapshots. The retained region
+identity allows later joint propagation with the legacy cross-correlation;
+the reported fitting error currently conditions on the full-sample template
+and covariance. This pilot does not update any photometric measurements.
+
+Three additional LRG bins ran sequentially in interactive allocation
+60524932, with the same settings and a shared Halofit grid over 0.70--1.05:
+
+| Redshift | Spectra | b_s | Conditional fitting error | Chi-square / dof |
+|---|---:|---:|---:|---:|
+| 0.70--0.75 | 193,529 | 2.3411 | 0.0280 | 5.164 / 2 |
+| 0.90--0.95 | 169,092 | 2.4775 | 0.0288 | 2.475 / 2 |
+| 1.00--1.05 | 78,659 | 2.5628 | 0.0285 | 1.104 / 2 |
+
+Outputs are under `/pscratch/sd/e/ezaborow/lrg-auto-bins-60524932/`, with
+per-bin `auto/measurement.npz`, `bias.json` and logs. Preparation/counting
+took 75.9, 29.3 and 12.1 seconds respectively, excluding Python startup and
+fitting. The comparison `summary.csv`, `auto_fits.png` and
+`bias_vs_redshift.png` include the earlier 0.80--0.85 pilot; diagonal-only
+fits are shown for comparison with the full-covariance fits. The saved
+`run.sh` and `code/report.py` record this interactive run and its reporting.
+
+### Weighted DESI LRG cross-correlation and joint bias jackknife
+
+`run_weighted_lrg.slurm` prepares the next comparison: all 14 bins from
+0.40 to 1.10, width 0.05, using the supplied DR1 v1.5 `WEIGHT` on reference
+data and spectroscopic randoms. Do not multiply its component weights again.
+`WEIGHT_FKP` is not included. Photometric ELGs and their randoms still have
+unit weights; new photometric weights are being generated separately.
+
+The job requests one CPU node, two concurrent serial workers and four hours,
+with `--mail-type=ALL`. It reads the completed LRG run at
+`/pscratch/sd/e/ezaborow/elg-desi-dr1-full-60339137/lrg/`, reuses the saved
+per-reference pair lists, and writes a new `${SCRATCH}/lrg-weighted-jk-JOBID`
+directory. No previous result is overwritten. It must be submitted only after
+approval of this compute workload. A single shared Halofit grid covers
+0.40--1.10; the reference-row neighbor searches do not run again.
+
+`error_estimator.py --spec-weight-column WEIGHT` multiplies the original
+per-reference DD/DR counts during sparse-matrix aggregation, including the
+DR-based local photometric-density normalization. Without this option, its
+original unit-weight arithmetic is unchanged. In weighted mode the legacy
+count-only Poisson/MJB diagnostic columns are NaN; the measurements and
+jackknife uncertainties are computed from the weighted pairs. Each worker
+still reads the original photometric inputs for the legacy density/region
+calculations; this is compute-node work despite reusing pair lists.
+
+`measure_spectroscopic_auto.py --weight-column WEIGHT` uses products of data
+and random weights in its ordered DD/DR/RR matrices. The self-pair-excluding
+normalizations are `(sum w)^2 - sum(w^2)` for DD/RR and `sum(wD)*sum(wR)`
+for DR, recalculated for every region deletion. Both the full radial
+histogram and all deleted histograms sum the spectroscopic random weights.
+Raw counts and first/second weight sums are retained separately.
+
+`combine_spectroscopic_bias.py bin` refits `b_s` for every matching jackknife
+auto-correlation and radial histogram. It keeps the full-sample auto
+covariance fixed as the GLS metric, avoiding a nested covariance estimate.
+The radial-cell matter integrals are computed once and recombined with each
+deletion's squared normalized radial probabilities. The existing fixed-angle
+auto convention and native dz=0.01 cross-counting geometry are retained.
+Checks require the same reference file, redshift interval, weighting,
+physical scale range, and jackknife region areas/order. Nonpositive fitted
+biases fail explicitly; no deletion is silently discarded.
+
+The saved quantities are the original integrated `wbar`, fitted `b_s`, and
+`wbar/b_s`, with their aligned jackknife vectors. The latter is **not yet
+b*dN/dz**: the radial matter response and magnification treatment are separate
+steps. Joint errors come from the distribution of `wbar_j/b_s_j`, centered
+on its deletion mean with the original area factors `1 - area_j/area_total`.
+The conditional fitting error is recorded as a diagnostic and is not added
+again in quadrature. Template/cosmology/model uncertainty is not included.
+
+The collector writes `summary.csv`, `weighted_lrg.png` and
+`joint_measurements.npz`, including covariance across redshift bins for all
+three quantities and the cross-covariance between wbar and bias. Per-bin
+`joint/bias.json` retains the full-fit diagnostics and `joint/measurement.npz`
+retains the paired resamples. The plot compares the new weighted cross with
+the previous unit-weight cross; it labels the current photometric weights.
+
+Future photometric weights require new weighted photometric pair counts and
+density normalizations; they cannot be reconstructed from these pixel-summed
+unit-weight pair lists. They must then enter the same joint jackknife flow,
+with the effective selection/footprint checked again. The deduplicated DESI
+ALL catalog has a unity placeholder weight and is deliberately excluded from
+this weighted-tracer workflow.
+
+The local Tomographer reference FITS supplies RA, DEC, Z and Sample_ID only.
+Its clone also contains precomputed density/activation maps and bias tables,
+but no object-level SDSS LSS weight table or matching random catalogs for
+this legacy workflow. Its paper (arXiv:2608.03415, section III.2) describes
+using the upstream LSS weights/randoms to build those products. Recovering
+that treatment here requires the upstream catalogs; the runtime option
+`per_source_weight_colname` applies to the user's test catalog and randoms.
+
+Small synthetic validation, with one thread and no survey inputs:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  /global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy/bin/python \
+  -m unittest -v test_spectroscopic_auto test_spectroscopic_bias test_joint_spectroscopic_bias
 ```
