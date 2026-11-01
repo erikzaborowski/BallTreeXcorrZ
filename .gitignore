@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 *.ipynb
+/plot_*.py
 .DS_Store
 
 # Tests and fixtures are kept locally, outside version control.
