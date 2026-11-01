@@ -1,0 +1,25 @@
+# Compatibility-tested on CPython 3.11.13; see compatibility-python311.json.
+# This freezes Python packages, not the interpreter or OpenSSL CA bundle.
+astropy==5.2.2
+certifi==2026.10.19
+cloudpickle==3.1.2
+contourpy==1.3.2
+cycler==0.12.1
+fonttools==4.67.0
+healpy==1.16.6
+joblib==1.6.0
+kiwisolver==1.5.1
+matplotlib==3.7.5
+numpy==1.23.5
+packaging==26.3
+pillow==13.0.0
+pip==26.2.2
+pyerfa==2.0.1.5
+pyparsing==3.3.3
+python-dateutil==3.0.0
+PyYAML==6.0.3
+scikit-learn==1.2.2
+scipy==1.10.1
+six==1.17.0
+threadpoolctl==3.7.0
+tzdata==2026.5

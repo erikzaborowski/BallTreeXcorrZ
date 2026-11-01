@@ -11,9 +11,10 @@ import numpy as np
 from astropy.io import fits
 
 
-def prepare_photometry(source, destination, fraction, seed, chunk_size):
+def prepare_photometry(source, destination, fraction, seed, chunk_size, weight_column=None):
     # Stream selected columns to disk; do not copy the 37 GB input table.
-    dtype = np.dtype([('RA', '<f8'), ('DEC', '<f8')])
+    dtype = np.dtype([('RA', '<f8'), ('DEC', '<f8')] +
+                     ([(weight_column, '<f8')] if weight_column else []))
     raw_path = destination.with_suffix('.raw')
     occupancy = np.zeros(hp.nside2npix(8), dtype=np.int64)
     rng = np.random.RandomState(seed)
@@ -28,6 +29,8 @@ def prepare_photometry(source, destination, fraction, seed, chunk_size):
             rows = np.empty(np.count_nonzero(keep), dtype=dtype)
             for name in dtype.names:
                 rows[name] = chunk[name][keep]
+            if weight_column and not np.all(np.isfinite(rows[weight_column]) & (rows[weight_column] >= 0)):
+                raise ValueError('Selected photometric weights must be finite and nonnegative')
             if (not np.all(np.isfinite(rows['RA'])) or
                     not np.all(np.isfinite(rows['DEC'])) or
                     np.any((rows['RA'] < 0) | (rows['RA'] >= 360)) or

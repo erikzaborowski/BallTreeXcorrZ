@@ -1,0 +1,41 @@
+# Python and notebook caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+
+# Local checkouts from the separate DR2 implementation
+/.worktrees/
+
+# Run logs and generated pipeline products (keep source and job scripts visible)
+*.log
+*.out
+*.err
+*.pid
+/inputs/
+/correlations/
+/plots/
+/integrated/
+/*-d1tree.p
+/*-r1tree.p
+/*_pix_list.p
+/sdss_desi_dr1_counts_errors.png
+/sdss_desi_dr1_per_bin*.csv
+/sdss_desi_dr1_per_bin_provenance.json
+/weighted_lrg_fit_diagnostics.csv
+/weighted_lrg_fit_diagnostics.json
+/weighted_lrg_fit_diagnostics.pdf
+/weighted_lrg_fit_diagnostics.png
+
+# Historical scratch patch; its changes are already in the tracked source.
+/python311-compatibility.patch
+
+# Local planning and diagnostics from the larger DR2 investigation.
+# Keep directories traversable so its shell/Slurm scripts remain untracked,
+# not ignored. The minimal pipeline documentation lives in the root READMEs.
+/docs/**
+!/docs/**/
+!/docs/**/*.sh
+!/docs/**/*.slurm
+!/docs/**/*.sbatch

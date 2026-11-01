@@ -426,6 +426,117 @@ fitting. The comparison `summary.csv`, `auto_fits.png` and
 fits are shown for comparison with the full-covariance fits. The saved
 `run.sh` and `code/report.py` record this interactive run and its reporting.
 
+### Photometric systematics weights with DESI DR1
+
+`run_elg_desi_dr1_weighted.slurm` applies the photometric catalog's
+`WEIGHT_SN_DEBV0` column and each DESI tracer's `WEIGHT`, retaining the
+`elg_mask == 0` selection and unit photometric-random weights. It covers the
+same 93 populated BGS/LRG/ELG/QSO bins as the bias run below, separately by
+tracer. Its draft allocation is one CPU node, four workers, 48 hours, account
+`desi`, and mail type `ALL`; submission requires workload approval.
+
+`prepare_weighted_elg.py` streams the selected RA/DEC/weight columns and checks
+every coordinate and its row order against the original preparation. It also
+requires unchanged NSIDE=8 occupancy and positive total weight in each
+occupied pixel. Invalid weights fail instead of being silently replaced or
+discarded; zero-weight objects contribute zero. The verified selection keeps
+the cached coordinate trees, randoms, and 74 jackknife regions usable.
+
+The original `cross_correlate.py` now accepts `--phot-weight-column`: its
+per-reference/per-annulus/pixel DD histograms sum photometric weights, while
+DR remains unit photometric-random counts. `error_estimator.py` accepts the
+same option, applies the existing spectroscopic row weights to DD/DR, and
+uses photometric weight sums in the local-density and global normalizations.
+Omitting the option keeps unit photometric weights. Pair-cache metadata guards
+against interpreting histograms with the wrong weights, inputs, or geometry.
+The old unit-weight pair histograms cannot recover individual photometric
+weights, so this job regenerates the pairs in a new output directory.
+
+For each bin, the job reuses the matching weighted spectroscopic autocorrelation
+from job 60623365 and refits bias for the matching jackknife deletions with
+`combine_spectroscopic_bias.py`. That helper checks the photometric validation
+report before accepting the original autocorrelation footprint. Each tracer
+gets `summary.csv`, `joint_measurements.npz`, and a `weighted_TRACER.png` plot;
+the NPZ retains the paired cross/bias realizations and their covariance.
+The reported quotient remains wbar/b_s, not the fully converted b*dN/dz.
+The new photometric weights do not alter or remedy the spectroscopic fit-quality
+issues already reported for LRGs.
+
+Small tests of preparation, explicit weighted pair products, spatial deletions,
+weight-rescaling invariance, and the unit-weight limit:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  /global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy/bin/python \
+  -m unittest -v test_photometric_weights test_joint_spectroscopic_bias
+```
+
+Restricted-footprint job **60663330** was submitted with the allocation above.
+Its output root is `/pscratch/sd/e/ezaborow/elg-desi-dr1-weighted-60663330/`.
+
+#### Additional full-DR9 photometric sample
+
+`run_elg_dr9_desi_dr1_weighted.slurm` is a separate job for
+`/global/cfs/cdirs/desicollab/users/ezaborow/projects/elg_cross_cmblens/files/elg_targets_sysnet.fits`
+and `elg_randoms_sysnet.fits` in the same directory. The owner confirmed the
+same `elg_mask == 0` cut, target `WEIGHT_SN_DEBV0`, and unit random weights.
+The unmasked input tables contain 42,193,919 targets and 824,728,828 randoms;
+selected counts are determined by preparation on compute.
+
+`prepare_elg_fresh_footprint.py` calls the existing photometric and DESI
+preparation functions to create a new coordinate-only base, occupancy map,
+and separate reference bins over 0.05 <= z < 4 wherever the DR1 catalogs have
+support. It constructs fresh haversine BallTrees in the original coordinate
+order. `prepare_weighted_elg.py` then supplies the same checked weighted
+photometry used by the restricted-run worker. The preparation retains the
+coordinate-only base so validation and auto/cross footprint checks can remain
+unchanged; the measurement uses the weighted file.
+
+The full-DR9 wrapper runs that shared worker with `MEASURE_AUTO=1`, measuring
+new weighted spectroscopic autocorrelations after each cross-correlation and
+checking their new jackknife regions against the cross. Only the existing
+cosmology power grids are reused from the restricted analysis, not its trees,
+reference selections, bias measurements, or covariance. Its collector uses
+`--no-unit-comparison` because there is no earlier unit-weight cross on this
+footprint. Output root: `${SCRATCH}/elg-dr9-desi-dr1-weighted-JOBID/`.
+Full-DR9 job **60663553** was submitted after separate approval, requesting
+one CPU node, four workers, 48 hours, account `desi`, and mail type `ALL`.
+Its output root is `/pscratch/sd/e/ezaborow/elg-dr9-desi-dr1-weighted-60663553/`.
+Both jobs can occupy one node each, respecting the two-node concurrent limit.
+
+### All-tracer weighted DESI DR1 bias fits
+
+`run_desi_bias_all.sh` runs inside an approved allocation and uses the existing
+`measure_spectroscopic_auto.py` and `fit_spectroscopic_bias.py` unchanged.
+It reads the completed DR1 task manifest, applies `WEIGHT` to data and matching
+spectroscopic randoms, and covers BGS_BRIGHT (0.05--0.50), LRG (0.40--1.10),
+ELG_LOPnotqso (0.80--1.60), and QSO (0.80--3.50), all in dz=0.05 bins.
+The 14 completed weighted LRG products from job 60530153 are linked into the
+new run; four workers count and fit the remaining 79 bins. This run measures
+spectroscopic autos only, retaining all jackknife realizations for later
+joint propagation. It does not recompute the photometric cross-correlations.
+The union `ALL` sample has no defined combined survey weights/randoms and is
+not treated as another tracer.
+
+Interactive job 60623365 started with one CPU node, four single-thread workers,
+a two-hour limit, account `desi`, and mail type `ALL`. Outputs are under
+`/pscratch/sd/e/ezaborow/desi-bias-all-60623365/`. Each tracer/bin writes
+`auto/measurement.npz`, `auto/pair_counts.npz`, `bias.json`, and logs; `claims/`
+records per-task exit codes and times. Completed bins survive a time limit.
+Four 100-redshift Halofit grids cover the new bins, with the existing 16385
+k nodes; each fit retains its radial-refinement check and power provenance.
+`summarize_desi_bias.py RUN_ROOT` writes `summary.csv` and `bias_fits.png`,
+checks the saved chi-square against the actual residual/covariance, and flags
+missing or failed bins. Its bias error is the **conditional fit error**, and
+its p-value is the nominal chi-square survival probability; neither substitutes
+for the joint cross/bias jackknife errors in the weighted LRG products.
+
+Job 60623365 completed successfully (exit 0) in 32m44s. All 79 new bins and
+14 reused LRG bins have finite, positive bias fits. Nominal p<0.05 occurs in
+0/9 BGS, 12/14 LRG, 0/16 ELG, and 4/54 QSO bins. The lowest-redshift BGS task
+took 22m35s. The covariance uncertainty is not calibrated, and the conditional
+fit errors should not be interpreted as model-systematic uncertainties.
+
 ### Weighted DESI LRG cross-correlation and joint bias jackknife
 
 `run_weighted_lrg.slurm` prepares the next comparison: all 14 bins from
@@ -441,6 +552,31 @@ per-reference pair lists, and writes a new `${SCRATCH}/lrg-weighted-jk-JOBID`
 directory. No previous result is overwritten. It must be submitted only after
 approval of this compute workload. A single shared Halofit grid covers
 0.40--1.10; the reference-row neighbor searches do not run again.
+
+The first user-approved interactive run was allocation 60528344, writing to
+`/pscratch/sd/e/ezaborow/lrg-weighted-jk-60528344/`. It ran the same wrapper
+under salloc (one CPU node, two workers, four-hour limit), rather than sbatch.
+It failed after 12m26s while reading spectroscopic random weights. The power
+grid and weighted cross-correlations for bins 008 and 009 completed; no auto
+measurement or bias fit completed. The allocation was released.
+
+The autocorrelation validator incorrectly required strictly positive weights.
+A bounded inspection of the first 250,000 NGC random rows found eight zero
+weights, including a z=0.40384 row with FRAC_TLOBS_TILES=0. Zero weights now
+pass validation and contribute nothing to weighted pairs/histograms; negative
+and non-finite values still fail. Regression tests cover the FITS random reader,
+weighted pair counts, deletions, and weight rescaling with zero-weight rows.
+
+The corrected run was restarted with user approval in interactive allocation
+60530153 on nid200033, with the same one-node/two-worker/four-hour limits.
+Its new output directory is `/pscratch/sd/e/ezaborow/lrg-weighted-jk-60530153/`.
+Allocation 60530153 completed successfully (exit 0) in 1h30m56s. All 14 bins,
+covering 2,138,627 LRG spectra, have cross, auto, bias-fit and joint-jackknife
+products; the combined CSV, NPZ covariance and plot were written. The joint
+bias propagation changes errors on wbar/b_s by -3.0% to +1.2% relative to
+holding b_s fixed. Fit quality remains a concern: 12 of 14 bins have chi-square
+above 5.991 for two degrees of freedom; these statistical results do not
+establish the adequacy of the scale-independent bias model.
 
 `error_estimator.py --spec-weight-column WEIGHT` multiplies the original
 per-reference DD/DR counts during sparse-matrix aggregation, including the

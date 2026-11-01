@@ -1,0 +1,139 @@
+{
+  "initial_compatibility_test": {
+    "python": "3.11.13 | packaged by conda-forge | (main, Jun  4 2025, 14:48:23) [GCC 13.3.0]",
+    "single_max_abs_difference": 2.781955345199094e-05,
+    "single_science_max_abs_difference": 1.7763568394002505e-15,
+    "angular_relative_difference": 1.2112754355086963e-08,
+    "single_legacy_wbar": [
+      0.3,
+      0.35,
+      0.29089330000145003,
+      0.13333271340323216
+    ],
+    "single_modern_wbar": [
+      0.3,
+      0.35,
+      0.29089330000145,
+      0.1333327134032321
+    ],
+    "modern_tree_reload_identical_counts": true,
+    "sliced_max_abs_difference": 2.781955345199094e-05,
+    "sliced_science_max_abs_difference": 1.7763568394002505e-15,
+    "sliced_legacy_wbar": [
+      0.3,
+      0.35,
+      0.27764031695265057,
+      0.13366945412408368
+    ],
+    "sliced_modern_wbar": [
+      0.3,
+      0.35,
+      0.27764031695265057,
+      0.13366945412408368
+    ],
+    "status": "PASS with the four-line candidate patch; unchanged code fails at Quantity/logspace",
+    "source_revision": "b2bcaf0330d1ceff505f96d3d2c09a82fbc8829e",
+    "candidate_patch": "python311-compatibility.patch",
+    "candidate_patch_applied_to_repository": false,
+    "requirements": "requirements-python311-tested.txt",
+    "fixture": "Bundled CMASS catalogue (2093 rows) and randoms (108199 rows); extra masked rows rejected",
+    "execution": "Local srun stub; one thread; 2 GiB and 30 CPU-second limits per subprocess; no allocation",
+    "validated": [
+      "Full preparation/counting/error/integration wrapper",
+      "Legacy result matches all 107 stored reference columns exactly",
+      "Raw pair counts identical between environments for both redshift binnings",
+      "Candidate columns 3 onward agree with legacy within 1e-12 absolute/relative tolerance",
+      "Angular columns 0 through 2 match independently measured distance ratio within 1e-12 tolerance",
+      "New BallTree caches reload with identical counts",
+      "Five count slices combine successfully"
+    ],
+    "angular_difference_explanation": {
+      "legacy_distance_Mpc": 1325.7837102110216,
+      "candidate_distance_Mpc": 1325.78369415213,
+      "mean_redshift": 0.3250271050313757,
+      "cause": "Updated Astropy physical constants change Planck15 radiation/neutrino densities and distance slightly",
+      "maximum_difference_arcsec": 2.781955345199094e-05
+    },
+    "security_checks": {
+      "pip": "26.2.2",
+      "certifi": "2026.10.19",
+      "pip_vendored_certifi": "2026.10.19",
+      "affected_G3_root_absent_from_both_certifi_bundles": true,
+      "borrowed_interpreter_default_OpenSSL_store_still_contains_G3_root": true
+    },
+    "limitations": [
+      "Compatibility test only; not a complete security remediation",
+      "Temporary venv uses existing Python 3.11.13; use an up-to-date Python build for deployment",
+      "Deployment must also update the OpenSSL CA bundle; the temporary venv inherits the existing base interpreter store",
+      "Full ELG measurement and large-memory behavior were not tested with the candidate",
+      "Rebuild BallTrees in the new environment; cross-version pickle compatibility was not tested",
+      "Candidate patch was tested only in temporary source copies; production scripts and environments were not modified"
+    ],
+    "temporary_test_directory": "/tmp/elgcmb-compat-46yk97y1"
+  },
+  "deployed_environment": {
+    "python": "3.11.17 (main, Oct  1 2026, 20:17:42) [GCC 14.3.0]",
+    "prefix": "/global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy",
+    "openssl": "OpenSSL 3.5.9 29 Sep 2026",
+    "cases": {
+      "single": {
+        "wbar": [
+          0.3,
+          0.35,
+          0.29089330000145,
+          0.1333327134032321
+        ],
+        "max_science_difference": 1.7763568394002505e-15,
+        "raw_pair_counts_identical": true
+      },
+      "slices": {
+        "wbar": [
+          0.3,
+          0.35,
+          0.27764031695265057,
+          0.13366945412408368
+        ],
+        "max_science_difference": 1.7763568394002505e-15,
+        "raw_pair_counts_identical": true
+      }
+    },
+    "certifi_affected_root_absent": true,
+    "pip_vendored_certifi_affected_root_absent": true,
+    "openssl_default_affected_root_absent": true,
+    "package_versions": {
+      "nersc-pymon": "0.5.0",
+      "joblib": "1.6.0",
+      "pyerfa": "2.0.1.5",
+      "fonttools": "4.67.0",
+      "contourpy": "1.3.2",
+      "healpy": "1.16.6",
+      "six": "1.17.0",
+      "matplotlib": "3.7.5",
+      "scipy": "1.10.1",
+      "pillow": "13.0.0",
+      "packaging": "26.3",
+      "kiwisolver": "1.5.1",
+      "setuptools": "84.0.0",
+      "numpy": "1.23.5",
+      "wheel": "0.48.0",
+      "pyparsing": "3.3.3",
+      "cycler": "0.12.1",
+      "certifi": "2026.10.19",
+      "tzdata": "2026.5",
+      "python-dateutil": "3.0.0",
+      "PyYAML": "6.0.3",
+      "threadpoolctl": "3.7.0",
+      "pip": "26.2.2",
+      "cloudpickle": "3.1.2",
+      "scikit-learn": "1.2.2",
+      "astropy": "5.2.2"
+    },
+    "tree_reload_identical_counts": true,
+    "ensurepip_version": "26.2.2",
+    "new_venv_bootstrap_verified": true,
+    "environment_recipe_matches_installed_versions": true,
+    "backup_prefix": "/global/cfs/cdirs/desi/users/ezaborow/conda/envs/elgcmb_legacy_py37_backup_20261023",
+    "code_patch_applied": true,
+    "held_job_to_release": "60164850"
+  }
+}

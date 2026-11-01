@@ -5,6 +5,7 @@ import os
 from sklearn import neighbors
 import healpy as hp
 import pickle
+import json
 from astropy.cosmology import Planck15 as LCDM
 from astropy import units as u
 import time
@@ -25,6 +26,7 @@ cli.add_argument("--Smin",default=0.05,type=float,help="minimum bin radius")
 cli.add_argument("--Smax",default=50,type=float,help="maximum bin radius")
 cli.add_argument("--Nbins",default=15,type=int,help="nbins")
 cli.add_argument("--query-batch-size",default=0,type=int,help="References per radius query; 0 keeps the original whole-slice query")
+cli.add_argument('--phot-weight-column', help='Photometric object weights; randoms remain unit weighted')
 cli.add_argument("phot_name", help="internal catalogue of fits type.")
 cli.add_argument("phot_name_randoms", help="internal catalogue of fits type.")
 cli.add_argument("spec_name", help="internal catalogue of fits type.")
@@ -48,7 +50,7 @@ def truncate(name):
 	'''Truncates a filename so I can use it to name things'''
 	return name.split('/')[-1].split('.fits')[0]
 	
-def sparse_histogram(dataset):
+def sparse_histogram(dataset, weights=None):
 	'''Defines a sparse histogram'''
 	if len(dataset) == 0:
 		#return []
@@ -57,10 +59,10 @@ def sparse_histogram(dataset):
 		maxx = np.max(dataset)
 		minn = np.min(dataset)
 		if minn == maxx:
-			cnts = len(dataset)
+			cnts = len(dataset) if weights is None else np.sum(weights)
 			lowbin = np.min(dataset)
 		else:
-			h = np.histogram(dataset,range=(minn,maxx+1),bins=maxx-minn+1)
+			h = np.histogram(dataset,range=(minn,maxx+1),bins=maxx-minn+1,weights=weights)
 			cnts = h[0][h[0] != 0]
 			lowbin = h[1][:-1][h[0] != 0]
 		return cnts, lowbin
@@ -73,6 +75,11 @@ rand1file = fits.open(ns.phot_name_randoms)[1].data
 
 data1RA = data1file['RA'][:]
 data1DEC = data1file['DEC'][:]
+phot_weights = None
+if ns.phot_weight_column:
+	phot_weights = np.asarray(data1file[ns.phot_weight_column], dtype=float)
+	if not np.all(np.isfinite(phot_weights) & (phot_weights >= 0)) or phot_weights.sum() <= 0:
+		raise ValueError('Photometric weights must be finite, nonnegative, and have positive sum')
 
 rand1RA = rand1file['RA'][:]
 rand1DEC = rand1file['DEC'][:]
@@ -107,6 +114,19 @@ else:
 #zs = np.arange(zmin,zmax+deltaz,deltaz)
 zs = np.linspace(zmin,zmax+deltaz,1+int(round((zmax+deltaz-zmin)/deltaz)))
 os.system('mkdir %s-%s/' % (truncate(ns.phot_name),truncate(ns.spec_name)))
+pair_metadata = dict(phot_weight=ns.phot_weight_column or 'unit',
+	phot=os.path.realpath(ns.phot_name), randoms=os.path.realpath(ns.phot_name_randoms),
+	spec=os.path.realpath(ns.spec_name), phot_size=os.stat(ns.phot_name).st_size,
+	phot_mtime_ns=os.stat(ns.phot_name).st_mtime_ns,
+	Smin=Smin, Smax=Smax, nbins=nbins, dz=deltaz, nside_base=nside_base)
+metadata_path = '%s-%s/pair_metadata.json' % (truncate(ns.phot_name),truncate(ns.spec_name))
+if os.path.exists(metadata_path):
+	with open(metadata_path) as stream:
+		if json.load(stream) != pair_metadata:
+			raise ValueError('Existing pair-cache provenance differs from this run')
+else:
+	with open(metadata_path, 'x') as stream:
+		json.dump(pair_metadata, stream, indent=2)
 
 for i in range(len(zs)-1):
 	z1 = zs[i]                                                                                                                                        
@@ -173,12 +193,14 @@ for i in range(len(zs)-1):
 
 				dd_pixj = dd_pix[j]
 				dd_pixj = dd_pixj[dd_hist_inds_orig >= 0]
+				dd_weightsj = None if phot_weights is None else phot_weights[dd_tree_out[0][j]][dd_hist_inds_orig >= 0]
 
 				dd_hist_inds_s = np.argsort(dd_hist_inds)
 
 				cs = np.concatenate((np.array([0]),np.cumsum(dd[j])))
 
-				dd_pix_list.append(list(map(lambda k: sparse_histogram(dd_pixj[dd_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
+				dd_pix_list.append(list(map(lambda k: sparse_histogram(dd_pixj[dd_hist_inds_s][cs[k]:cs[k+1]],
+					None if dd_weightsj is None else dd_weightsj[dd_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
 
 				dr_hist_inds_orig = np.digitize(dr_tree_out[1][j],bins=b*np.pi/180.)-1
 				dr_hist_inds = dr_hist_inds_orig[dr_hist_inds_orig >= 0]
@@ -193,6 +215,10 @@ for i in range(len(zs)-1):
 				dr_pix_list.append(list(map(lambda k: sparse_histogram(dr_pixj[dr_hist_inds_s][cs[k]:cs[k+1]]), range(len(dd[j])))))
 
 			all_dd.extend(dd)
+			if phot_weights is not None:
+				# Keep integer counts above for neighbour-index slicing; weight only the saved DD totals.
+				all_dd[-len(dd):] = [np.histogram(dist, bins=b*np.pi/180., weights=phot_weights[ind])[0]
+					for ind, dist in zip(dd_tree_out[0], dd_tree_out[1])]
 			all_dr.extend(dr)
 			del dd_tree_out, dr_tree_out, dd_pix, dr_pix
 

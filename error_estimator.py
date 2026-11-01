@@ -9,6 +9,7 @@ from astropy import units as u
 import pickle
 import time
 import os
+import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -34,7 +35,8 @@ cli.add_argument("--nbins",default=15,type=int,help="Number of bins")
 cli.add_argument("--orig_deltaz",default=0.01,type=float,help="Original deltaz")
 cli.add_argument("--nside_base",default=256,type=int,help="Original nside")
 cli.add_argument("--small_nside",default=8,type=int,help="nside for local wise density estimation")
-cli.add_argument('--spec-weight-column', help='Optional reference weight column; cached photometric pairs remain unit weighted')
+cli.add_argument('--spec-weight-column', help='Optional reference weight column, applied when aggregating cached pairs')
+cli.add_argument('--phot-weight-column', help='Photometric weight column already used in the cached DD pairs')
 cli.add_argument("phot_name", help="internal catalogue of fits type.")
 cli.add_argument("phot_name_randoms", help="internal catalogue of fits type.")
 cli.add_argument("spec_name", help="internal catalogue of fits type.")
@@ -186,6 +188,23 @@ rand1file = fits.open(ns.phot_name_randoms)[1].data
 
 data1RA = data1file['RA'][:]
 data1DEC = data1file['DEC'][:]
+phot_weights = None
+if ns.phot_weight_column:
+	phot_weights = np.asarray(data1file[ns.phot_weight_column], dtype=float)
+	if not np.all(np.isfinite(phot_weights) & (phot_weights >= 0)) or phot_weights.sum() <= 0:
+		raise ValueError('Photometric weights must be finite, nonnegative, and have positive sum')
+phot_total = len(data1RA) if phot_weights is None else phot_weights.sum()
+metadata_path = '%s-%s/pair_metadata.json' % (truncate(ns.phot_name),truncate(ns.spec_name))
+if ns.phot_weight_column or os.path.exists(metadata_path):
+	with open(metadata_path) as stream:
+		pair_metadata = json.load(stream)
+	expected = dict(phot_weight=ns.phot_weight_column or 'unit',
+		phot=os.path.realpath(ns.phot_name), randoms=os.path.realpath(ns.phot_name_randoms),
+		spec=os.path.realpath(ns.spec_name), phot_size=os.stat(ns.phot_name).st_size,
+		phot_mtime_ns=os.stat(ns.phot_name).st_mtime_ns,
+		Smin=Smin, Smax=Smax, nbins=nbins, dz=orig_deltaz, nside_base=nside_base)
+	if pair_metadata != expected:
+		raise ValueError('Pair-cache weights, catalogs, or geometry differ from estimator settings')
 
 rand1RA = rand1file['RA'][:]
 rand1DEC = rand1file['DEC'][:]
@@ -206,7 +225,7 @@ if ns.spec_weight_column:
 # the local number counts
 small_nside = ns.small_nside
 data1_smallpix = hp.ang2pix(small_nside,data1RA,data1DEC,lonlat=True)
-data1_smallmap = np.bincount(data1_smallpix,minlength=12*small_nside**2)
+data1_smallmap = np.bincount(data1_smallpix,weights=phot_weights,minlength=12*small_nside**2)
 
 rand1_smallpix = hp.ang2pix(small_nside,rand1RA,rand1DEC,lonlat=True)
 rand1_smallmap = np.bincount(rand1_smallpix,minlength=12*small_nside**2)
@@ -228,6 +247,8 @@ unq_all_healpixels,hp_cnts = np.unique(all_healpixels,return_counts=True)
 
 d1pix = hp.ang2pix(ns.nside, data1RA, data1DEC, nest=False, lonlat=True)
 unq_all_healpixels_d1,hp_d1_cnts = np.unique(d1pix,return_counts=True)
+if phot_weights is not None:
+	hp_d1_cnts = np.bincount(d1pix, weights=phot_weights)[unq_all_healpixels_d1]
 
 d2pix = hp.ang2pix(ns.nside, data2RA, data2DEC, nest=False, lonlat=True)
 
@@ -341,7 +362,7 @@ for i in range(zbin):
 	data2mask  = data2file['Z'][:] >= z1
 	data2mask &= data2file['Z'][:] <  z2
 	
-	Nd1 = len(data1RA) #* np.mean(data1_smallmap[data2_smallpix[data2mask]])/np.mean(data1_smallmap[data2_smallpix])
+	Nd1 = phot_total
 
 	Nr1 = len(rand1RA) #* np.mean(rand1_smallmap[data2_smallpix[data2mask]])/np.mean(rand1_smallmap[data2_smallpix])
 
@@ -391,6 +412,8 @@ for i in range(zbin):
 	if flag != 0:
 		print('loaded files', time.time()-t0)
 		allinds = np.array(allinds).astype('int')
+		if ns.phot_weight_column and not np.array_equal(np.sort(allinds), np.flatnonzero(data2mask)):
+			raise ValueError('Weighted pair cache is missing or duplicates reference rows in this redshift bin')
 		row_weights = None if spec_weights is None else spec_weights[allinds]
 		pix = hp.ang2pix(ns.nside,data2RA[allinds],data2DEC[allinds],lonlat=True)
 		
@@ -476,7 +499,7 @@ for i in range(zbin):
 		# the geometric mean of the two is purely empirical...
 		ng =  np.sqrt(np.shape(data2RA)[0]*np.shape(data1RA)[0])
 		w_mjb = np.sqrt(dd_data + dd_data**2. * 4./ng)/dr_data * float(Nr1)/float(Nd1)
-		if row_weights is not None:
+		if row_weights is not None or phot_weights is not None:
 			# These legacy count-only approximations do not describe weighted pairs.
 			# The resampled measurements/covariance below do include the weights.
 			wpoisson[:] = np.nan
@@ -584,7 +607,8 @@ for i in range(zbin):
 				header_out='\n'.join([
 						"SPEC=%s" % (ns.spec_name),
 						"SPEC_WEIGHT_COLUMN=%s" % (ns.spec_weight_column or 'unit'),
-						"PHOT_WEIGHT=unit",
+						"PHOT_WEIGHT=%s" % (ns.phot_weight_column or 'unit'),
+						"PHOT_RANDOM_WEIGHT=unit",
 						"z1=%g z2=%g zmean=%g" % (z1, z2, zmean),
 						"PHOTO=%s" % (ns.phot_name),
 						"PHOTO_RANDOM=%s" % (ns.phot_name_randoms),
@@ -639,7 +663,7 @@ for i in range(zbin):
 					wts[unq_all_healpixels_fn[hps[k]]] = 0
 					#wts[k] = 0
 					#Nd1 = np.shape(data1RA)[0] * np.mean(data1_smallmap[data2_smallpix[data2mask]])/np.mean(data1_smallmap[data2_smallpix])
-					Nd1 = np.shape(data1RA)[0]
+					Nd1 = phot_total
 					print('modulated by ', np.mean(data1_smallmap[data2_smallpix[data2mask]])/np.mean(data1_smallmap[data2_smallpix]))
 					for l,hpk in enumerate(hps[k]):
 						Nd1 -=  hp_d1_cnts[np.where(unq_all_healpixels == hpk)]
@@ -705,7 +729,7 @@ for i in range(zbin):
 						wts[unq_all_healpixels_fn[hps[l]]] = 0
 						l2o_jackknife_dd[:,cnter] = resample(pair_mats_dd,wts)
 						l2o_jackknife_dr[:,cnter] = resample(pair_mats_dr,wts)
-						Nd1 = np.shape(data1RA)[0]
+						Nd1 = phot_total
 						for hpk in hps[k]:
 							Nd1 -=  hp_d1_cnts[np.where(unq_all_healpixels == hpk)]
 						for hpl in hps[l]:
@@ -727,7 +751,8 @@ for i in range(zbin):
 				header_out='\n'.join([
 						"SPEC=%s" % (ns.spec_name),
 						"SPEC_WEIGHT_COLUMN=%s" % (ns.spec_weight_column or 'unit'),
-						"PHOT_WEIGHT=unit",
+						"PHOT_WEIGHT=%s" % (ns.phot_weight_column or 'unit'),
+						"PHOT_RANDOM_WEIGHT=unit",
 						"z1=%g z2=%g zmean=%g" % (z1, z2, zmean),
 						"PHOTO=%s" % (ns.phot_name),
 						"PHOTO_RANDOM=%s" % (ns.phot_name_randoms),
